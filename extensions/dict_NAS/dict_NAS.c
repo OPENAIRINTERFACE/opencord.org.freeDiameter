@@ -26,7 +26,7 @@
 #include <freeDiameter/extension.h>
 
 #define PROTO_VER "unspecified"
-#define GEN_DATE  1506697121.58
+#define GEN_DATE  1530130718.96
 
 const char *nas_proto_ver = PROTO_VER;
 const double nas_gen_date = GEN_DATE;
@@ -100,27 +100,13 @@ struct local_rules_definition {
 static int dict_nas_load_defs(char * conffile)
 {
    TRACE_ENTRY("%p", conffile);
-	struct dict_object * app_id0;
 	struct dict_object * app_id1;
 
 	/* Application Section */
 	{
 	  {
-			struct dict_application_data data = { 0, "NAS-app0" };
-			CHECK_dict_new( DICT_APPLICATION, &data, NULL, &app_id0)
-	  }
-	  {
 			struct dict_application_data data = { 1, "NAS" };
 			CHECK_dict_new( DICT_APPLICATION, &data, NULL, &app_id1)
-	  }
-	  /* Result codes */
-	  {
-			struct dict_object *type;
-			CHECK_dict_search(DICT_TYPE, TYPE_BY_NAME, "Enumerated(Result-Code)",&type);
-			struct dict_enumval_data        t_1 = { "Bangkok", { .u32=10260 }};
-
-			CHECK_dict_new( DICT_ENUMVAL, &t_1, type, NULL);
-
 	  }
 	}
 
@@ -541,11 +527,11 @@ int dict_entry(char * conffile)
 	return dict_nas_load_rules(conffile);
 }
 
-const char* dict_nas_proto_ver(char * conffile) {
+const char* dict_proto_ver(char * conffile) {
 	return nas_proto_ver;
 }
 
-const double dict_nas_gen_ts(char * conffile) {
+const double dict_gen_ts(char * conffile) {
 	return nas_gen_date;
 }
 

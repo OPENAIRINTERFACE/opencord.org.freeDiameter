@@ -10,7 +10,7 @@ FD_ADD_EXTENSION(dict_NAS dict_NAS.c)
 
 INSTALL(TARGETS dict_NAS
 	LIBRARY DESTINATION ${INSTALL_EXTENSIONS_SUFFIX}
-COMPONENT freeDiameter-dictionary-dict_NAS)
+COMPONENT freeDiameter-dictionary-NAS)
 
 
 

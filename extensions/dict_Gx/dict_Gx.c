@@ -26,7 +26,7 @@
 #include <freeDiameter/extension.h>
 
 #define PROTO_VER "e30"
-#define GEN_DATE  1506697205.07
+#define GEN_DATE  1530130752.96
 
 const char *gx_proto_ver = PROTO_VER;
 const double gx_gen_date = GEN_DATE;
@@ -423,11 +423,11 @@ int dict_entry(char * conffile)
 	return dict_gx_load_rules(conffile);
 }
 
-const char* dict_gx_proto_ver(char * conffile) {
+const char* dict_proto_ver(char * conffile) {
 	return gx_proto_ver;
 }
 
-const double dict_gx_gen_ts(char * conffile) {
+const double dict_gen_ts(char * conffile) {
 	return gx_gen_date;
 }
 
