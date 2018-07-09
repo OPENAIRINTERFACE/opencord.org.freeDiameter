@@ -7,6 +7,8 @@ if (POLICY CMP0022)
 	cmake_policy(SET CMP0022 OLD)
 endif (POLICY CMP0022)
 
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+
 # List of source files for the library
 SET(LFDPROTO_SRC
 	fdproto-internal.h
@@ -24,6 +26,7 @@ SET(LFDPROTO_SRC
 	sessions.c
 	utils.c
 	version.c
+	hashlist.cpp
 	)
 
 

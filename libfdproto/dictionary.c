@@ -36,6 +36,53 @@
 #include "fdproto-internal.h"
 #include <inttypes.h>
 
+#define ENABLE_LOCK_BYPASS 1
+#define USE_HASHLIST 1
+
+#if USE_HASHLIST
+   int initInt32HashList(void **hl);
+   void deleteInt32HashList(void *hl);
+   void deleteEntryInt32HashList(int32_t k, void *hl);
+   int insertInt32HashList(int32_t k, void *v, void *hl, void **duplicate);
+   int findInt32HashList(int32_t k, void *hl, void **result);
+
+   int initInt64HashList(void **hl);
+   void deleteInt64HashList(void *hl);
+   void deleteEntryInt64HashList(int64_t k, void *hl);
+   int insertInt64HashList(int64_t k, void *v, void *hl, void **duplicate);
+   int findInt64HashList(int64_t k, void *hl, void **result);
+
+   int initUInt32HashList(void **hl);
+   void deleteUInt32HashList(void *hl);
+   void deleteEntryUInt32HashList(uint32_t k, void *hl);
+   int insertUInt32HashList(uint32_t k, void *v, void *hl, void **duplicate);
+   int findUInt32HashList(uint32_t k, void *hl, void **result);
+
+   int initUInt64HashList(void **hl);
+   void deleteUInt64HashList(void *hl);
+   void deleteEntryUInt64HashList(uint64_t k, void *hl);
+   int insertUInt64HashList(uint64_t k, void *v, void *hl, void **duplicate);
+   int findUInt64HashList(uint64_t k, void *hl, void **result);
+
+   int initFloat32HashList(void **hl);
+   void deleteFloat32HashList(void *hl);
+   void deleteEntryFloat32HashList(float k, void *hl);
+   int insertFloat32HashList(float k, void *v, void *hl, void **duplicate);
+   int findFloat32HashList(float k, void *hl, void **result);
+
+   int initFloat64HashList(void **hl);
+   void deleteFloat64HashList(void *hl);
+   void deleteEntryFloat64HashList(double k, void *hl);
+   int insertFloat64HashList(double k, void *v, void *hl, void **duplicate);
+   int findFloat64HashList(double k, void *hl, void **result);
+
+   int initStringHashList(void **hl);
+   void deleteStringHashList(void *hl);
+   void deleteEntryStringHashList(const char *k, void *hl);
+   int insertStringHashList(const char *k, void *v, void *hl, void **duplicate);
+   int findStringHashList(const char *k, void *hl, void **result);
+#endif
+
 /* Names of the base types */
 const char * type_base_name[] = { /* must keep in sync with dict_avp_basetype */
 	"GROUPED", 	/* AVP_TYPE_GROUPED */
@@ -77,6 +124,10 @@ struct dict_object {
 	struct dict_object *	parent; /* The parent of this object, if any */
 	
 	struct fd_list		list[NB_LISTS_PER_OBJ];/* used to chain objects.*/
+#ifdef USE_HASHLIST
+	void *            hashlist[NB_LISTS_PER_OBJ];
+#endif
+
 	/* More information about the lists :
 	
 	 - the use for each list depends on the type of object. See detail below.
@@ -133,6 +184,9 @@ struct dict_object {
 struct dictionary {
 	int		 	dict_eyec;		/* Eye-catcher for the dictionary (DICT_EYECATCHER) */
 	
+#if ENABLE_LOCK_BYPASS
+	int			dict_bypass_lock;	/* When true, don't use the dict_lock */
+#endif
 	pthread_rwlock_t 	dict_lock;		/* The global rwlock for the dictionary */
 	
 	struct dict_object	dict_vendors;		/* Sentinel for the list of vendors, corresponding to vendor 0 */
@@ -274,6 +328,10 @@ static int init_object_data(struct dict_object * dest, void * source, enum dict_
 	switch (type) {
 		case DICT_VENDOR:
 			DUP_string_len( dest->data.vendor.vendor_name, &dest->datastr_len );
+#if USE_HASHLIST
+			initUInt32HashList(&dest->hashlist[0]);
+         initStringHashList(&dest->hashlist[1]);
+#endif
 			break;
 		
 		case DICT_APPLICATION:
@@ -282,6 +340,35 @@ static int init_object_data(struct dict_object * dest, void * source, enum dict_
 			
 		case DICT_TYPE:
 			DUP_string_len( dest->data.type.type_name, &dest->datastr_len );
+#if USE_HASHLIST
+			switch (dest->data.type.type_base)
+			{
+			   case AVP_TYPE_OCTETSTRING:
+			      break;
+            case AVP_TYPE_INTEGER32:
+               initInt32HashList(&dest->hashlist[0]);
+               break;
+            case AVP_TYPE_INTEGER64:
+               initInt64HashList(&dest->hashlist[0]);
+               break;
+            case AVP_TYPE_UNSIGNED32:
+               initUInt32HashList(&dest->hashlist[0]);
+               break;
+            case AVP_TYPE_UNSIGNED64:
+               initUInt64HashList(&dest->hashlist[0]);
+               break;
+            case AVP_TYPE_FLOAT32:
+               initFloat32HashList(&dest->hashlist[0]);
+               break;
+            case AVP_TYPE_FLOAT64:
+               initFloat64HashList(&dest->hashlist[0]);
+               break;
+            case AVP_TYPE_GROUPED:
+            default:
+               break;
+			}
+			initStringHashList(&dest->hashlist[1]);
+#endif
 			break;
 			
 		case DICT_ENUMVAL:
@@ -346,6 +433,10 @@ static void destroy_object_data(struct dict_object * obj)
 	switch (obj->type) {
 		case DICT_VENDOR:
 			free( obj->data.vendor.vendor_name );
+#if USE_HASHLIST
+			deleteUInt32HashList(obj->hashlist[0]);
+         deleteStringHashList(obj->hashlist[1]);
+#endif
 			break;
 		
 		case DICT_APPLICATION:
@@ -354,6 +445,37 @@ static void destroy_object_data(struct dict_object * obj)
 			
 		case DICT_TYPE:
 			free( obj->data.type.type_name );
+#if USE_HASHLIST
+         switch (obj->data.type.type_base)
+         {
+            case AVP_TYPE_OCTETSTRING:
+               break;
+            case AVP_TYPE_INTEGER32:
+               deleteInt32HashList(obj->hashlist[0]);
+               break;
+            case AVP_TYPE_INTEGER64:
+               deleteInt64HashList(obj->hashlist[0]);
+               break;
+            case AVP_TYPE_UNSIGNED32:
+               deleteUInt32HashList(obj->hashlist[0]);
+               break;
+            case AVP_TYPE_UNSIGNED64:
+               deleteUInt64HashList(obj->hashlist[0]);
+               break;
+            case AVP_TYPE_FLOAT32:
+               deleteFloat32HashList(obj->hashlist[0]);
+               break;
+            case AVP_TYPE_FLOAT64:
+               deleteFloat64HashList(obj
+
+
+                     ->hashlist[0]);
+               break;
+            default:
+               break;
+         }
+         deleteStringHashList(obj->hashlist[1]);
+#endif
 			break;
 			
 		case DICT_ENUMVAL:
@@ -870,8 +992,12 @@ static int search_enumval ( struct dictionary * dict, int criteria, const void *
 				/* From here the "parent" object is valid */
 				
 				if ( _what->search.enum_name != NULL ) {
+#if USE_HASHLIST
+               ret = findStringHashList(_what->search.enum_name, parent->hashlist[1], (void**)result);
+#else
 					/* We are looking for this string */
 					SEARCH_os0(  _what->search.enum_name, &parent->list[1], enumval.enum_name, 1 );
+#endif
 				} else {
 					/* We are looking for the value in enum_value */
 					switch (parent->data.type.type_base) {
@@ -884,51 +1010,75 @@ static int search_enumval ( struct dictionary * dict, int criteria, const void *
 							break;
 
 						case AVP_TYPE_INTEGER32:
+#if USE_HASHLIST
+		               ret = findInt32HashList(_what->search.enum_value.i32, parent->hashlist[0], (void**)result);
+#else
 							SEARCH_scalar(	_what->search.enum_value.i32,
 									&parent->list[2],
 									enumval.enum_value.i32,
 									1,
 									(struct dict_object *)NULL);
+#endif
 							break;
 							
 						case AVP_TYPE_INTEGER64:
+#if USE_HASHLIST
+                     ret = findInt64HashList(_what->search.enum_value.i64, parent->hashlist[0], (void**)result);
+#else
 							SEARCH_scalar(	_what->search.enum_value.i64,
 									&parent->list[2],
 									enumval.enum_value.i64,
 									1,
 									(struct dict_object *)NULL);
+#endif
 							break;
 							
 						case AVP_TYPE_UNSIGNED32:
+#if USE_HASHLIST
+                     ret = findUInt32HashList(_what->search.enum_value.u32, parent->hashlist[0], (void**)result);
+#else
 							SEARCH_scalar(	_what->search.enum_value.u32,
 									&parent->list[2],
 									enumval.enum_value.u32,
 									1,
 									(struct dict_object *)NULL);
+#endif
 							break;
 							
 						case AVP_TYPE_UNSIGNED64:
+#if USE_HASHLIST
+                     ret = findUInt64HashList(_what->search.enum_value.u64, parent->hashlist[0], (void**)result);
+#else
 							SEARCH_scalar(	_what->search.enum_value.u64,
 									&parent->list[2],
 									enumval.enum_value.u64,
 									1,
 									(struct dict_object *)NULL);
+#endif
 							break;
 							
 						case AVP_TYPE_FLOAT32:
+#if USE_HASHLIST
+                     ret = findFloat32HashList(_what->search.enum_value.f32, parent->hashlist[0], (void**)result);
+#else
 							SEARCH_scalar(	_what->search.enum_value.f32,
 									&parent->list[2],
 									enumval.enum_value.f32,
 									1,
 									(struct dict_object *)NULL);
+#endif
 							break;
 							
 						case AVP_TYPE_FLOAT64:
+#if USE_HASHLIST
+                     ret = findFloat64HashList(_what->search.enum_value.f64, parent->hashlist[0], (void**)result);
+#else
 							SEARCH_scalar(	_what->search.enum_value.f64,
 									&parent->list[2],
 									enumval.enum_value.f64,
 									1,
 									(struct dict_object *)NULL);
+#endif
 							break;
 							
 						default:
@@ -961,13 +1111,21 @@ static int search_avp ( struct dictionary * dict, int criteria, const void * wha
 				avp_code_t code;
 				code = *(avp_code_t *) what;
 
+#if USE_HASHLIST
+				ret = findUInt32HashList(code, dict->dict_vendors.hashlist[0], (void**)result);
+#else
 				SEARCH_scalar( code, &dict->dict_vendors.list[1],  avp.avp_code, 1, (struct dict_object *)NULL );
+#endif
 			}
 			break;
 				
 		case AVP_BY_NAME:
 			/* "what" is the AVP name, vendor 0 */
+#if USE_HASHLIST
+		   ret = findStringHashList((const char *)what, dict->dict_vendors.hashlist[1], (void**)result);
+#else
 			SEARCH_os0( what, &dict->dict_vendors.list[2], avp.avp_name, 1);
+#endif
 			break;
 			
 		case AVP_BY_CODE_AND_VENDOR:
@@ -990,10 +1148,18 @@ static int search_avp ( struct dictionary * dict, int criteria, const void * wha
 				
 				/* We now have our vendor = head of the appropriate avp list */
 				if (criteria == AVP_BY_NAME_AND_VENDOR) {
+#if USE_HASHLIST
+				   ret = findStringHashList(_what->avp_name, vendor->hashlist[1], (void**)result);
+#else
 					SEARCH_os0( _what->avp_name, &vendor->list[2], avp.avp_name, 1);
+#endif
 				} else {
 					/* AVP_BY_CODE_AND_VENDOR */
+#if USE_HASHLIST
+				   ret = findUInt32HashList(_what->avp_code, vendor->hashlist[0], (void**)result);
+#else
 					SEARCH_scalar( _what->avp_code, &vendor->list[1], avp.avp_code, 1, (struct dict_object *)NULL );
+#endif
 				}
 			}
 			break;
@@ -1028,9 +1194,17 @@ static int search_avp ( struct dictionary * dict, int criteria, const void * wha
 				/* We now have our vendor = head of the appropriate avp list */
 				if (_what->avp_data.avp_code) {
 					CHECK_PARAMS( ! _what->avp_data.avp_name );
+#if USE_HASHLIST
+					ret = findUInt32HashList(_what->avp_data.avp_code, vendor->hashlist[0], (void**)result);
+#else
 					SEARCH_scalar( _what->avp_data.avp_code, &vendor->list[1], avp.avp_code, 1, (struct dict_object *)NULL );
+#endif
 				} else {
+#if USE_HASHLIST
+				   ret = findStringHashList(_what->avp_data.avp_name, vendor->hashlist[1], (void**)result);
+#else
 					SEARCH_os0( _what->avp_data.avp_name, &vendor->list[2], avp.avp_name, 1);
+#endif
 				}
 			}
 			break;
@@ -1045,7 +1219,13 @@ static int search_avp ( struct dictionary * dict, int criteria, const void * wha
 				
 				/* If not found, loop for all vendors, until found */
 				for (li = dict->dict_vendors.list[0].next; li != &dict->dict_vendors.list[0]; li = li->next) {
+#if USE_HASHLIST
+               ret = findStringHashList(what, _O(li->o)->hashlist[1], (void**)result);
+               if (ret == 0 && *result)
+                  goto end;
+#else
 					SEARCH_os0_l( what, wl, &_O(li->o)->list[2], avp.avp_name, 1);
+#endif
 				}
 			}
 			break;
@@ -1346,6 +1526,9 @@ DECLARE_FD_DUMP_PROTOTYPE(fd_dict_dump, struct dictionary * dict)
 		return fd_dump_extend(FD_DUMP_STD_PARAMS, "INVALID/NULL");
 	}
 	
+#if ENABLE_LOCK_BYPASS
+	if (!dict->dict_bypass_lock)
+#endif
 	CHECK_POSIX_DO(  pthread_rwlock_rdlock( &dict->dict_lock ), /* ignore */  );
 	
 	CHECK_MALLOC_DO( fd_dump_extend( FD_DUMP_STD_PARAMS, "\n {dict(%p) : VENDORS / AVP / RULES}\n", dict), goto error);
@@ -1372,10 +1555,16 @@ DECLARE_FD_DUMP_PROTOTYPE(fd_dict_dump, struct dictionary * dict)
 	for (i=1; i<=DICT_TYPE_MAX; i++)
 		CHECK_MALLOC_DO( fd_dump_extend( FD_DUMP_STD_PARAMS, "\n   %5d: %s",  dict->dict_count[i], dict_obj_info[i].name), goto error);
 	
+#if ENABLE_LOCK_BYPASS
+   if (!dict->dict_bypass_lock)
+#endif
 	CHECK_POSIX_DO(  pthread_rwlock_unlock( &dict->dict_lock ), /* ignore */  );
 	return *buf;
 error:	
 	/* Free the rwlock */
+#if ENABLE_LOCK_BYPASS
+   if (!dict->dict_bypass_lock)
+#endif
 	CHECK_POSIX_DO(  pthread_rwlock_unlock( &dict->dict_lock ), /* ignore */  );
 	return NULL;
 }
@@ -1682,11 +1871,14 @@ int fd_dict_new ( struct dictionary * dict, enum dict_object_type type, void * d
 	
 	/* Initialize the data of the new object */
 	init_object(new, type);
+   new->dico = dict;
+   new->parent = parent;
 	init_object_data(new, data, type, dupos);
-	new->dico = dict;
-	new->parent = parent;
-	
+
 	/* We will change the dictionary => acquire the write lock */
+#if ENABLE_LOCK_BYPASS
+	if (!dict->dict_bypass_lock)
+#endif
 	CHECK_POSIX_DO(  ret = pthread_rwlock_wrlock(&dict->dict_lock),  goto error_free  );
 	
 	/* Now link the object -- this also checks that no object with same keys already exists */
@@ -1713,6 +1905,75 @@ int fd_dict_new ( struct dictionary * dict, enum dict_object_type type, void * d
 			break;
 		
 		case DICT_ENUMVAL:
+#if USE_HASHLIST
+		   switch (parent->data.type.type_base)
+		   {
+            case AVP_TYPE_INTEGER32:
+               ret = insertInt32HashList(new->data.enumval.enum_value.i32, new, parent->hashlist[0], (void**)&locref);
+               break;
+
+            case AVP_TYPE_INTEGER64:
+               ret = insertInt64HashList(new->data.enumval.enum_value.i64, new, parent->hashlist[0], (void**)&locref);
+               break;
+
+            case AVP_TYPE_UNSIGNED32:
+               ret = insertUInt32HashList(new->data.enumval.enum_value.u32, new, parent->hashlist[0], (void**)&locref);
+               break;
+
+            case AVP_TYPE_UNSIGNED64:
+               ret = insertUInt64HashList(new->data.enumval.enum_value.u64, new, parent->hashlist[0], (void**)&locref);
+               break;
+
+            case AVP_TYPE_FLOAT32:
+               ret = insertFloat32HashList(new->data.enumval.enum_value.f32, new, parent->hashlist[0], (void**)&locref);
+               break;
+
+            case AVP_TYPE_FLOAT64:
+               ret = insertFloat64HashList(new->data.enumval.enum_value.f64, new, parent->hashlist[0], (void**)&locref);
+               break;
+
+            default:
+               /* Invalid parent type basetype */
+               CHECK_PARAMS( parent = NULL );
+		   }
+		   if (ret)
+		      goto error_unlock;
+
+         ret = insertStringHashList(new->data.enumval.enum_name, new, parent->hashlist[1], (void **)&locref);
+         if (ret) {
+            switch (parent->data.type.type_base)
+            {
+               case AVP_TYPE_INTEGER32:
+                  deleteEntryInt32HashList(new->data.enumval.enum_value.i32, parent->hashlist[0]);
+                  break;
+
+               case AVP_TYPE_INTEGER64:
+                  deleteEntryInt64HashList(new->data.enumval.enum_value.i64, parent->hashlist[0]);
+                  break;
+
+               case AVP_TYPE_UNSIGNED32:
+                  deleteEntryUInt32HashList(new->data.enumval.enum_value.u32, parent->hashlist[0]);
+                  break;
+
+               case AVP_TYPE_UNSIGNED64:
+                  deleteEntryUInt64HashList(new->data.enumval.enum_value.u64, parent->hashlist[0]);
+                  break;
+
+               case AVP_TYPE_FLOAT32:
+                  deleteEntryFloat32HashList(new->data.enumval.enum_value.f32, parent->hashlist[0]);
+                  break;
+
+               case AVP_TYPE_FLOAT64:
+                  deleteEntryFloat64HashList(new->data.enumval.enum_value.f64, parent->hashlist[0]);
+                  break;
+
+               default:
+                  /* Invalid parent type basetype */
+                  CHECK_PARAMS( parent = NULL );
+            }
+            goto error_unlock;
+         }
+#endif
 			/* A type_enum object is linked in it's parent 'type' object lists 1 and 2 by its name and values */
 			ret = fd_list_insert_ordered ( &parent->list[1], &new->list[0], (int (*)(void*, void *))order_enum_by_name, (void **)&locref );
 			if (ret)
@@ -1726,6 +1987,17 @@ int fd_dict_new ( struct dictionary * dict, enum dict_object_type type, void * d
 			break;
 		
 		case DICT_AVP:
+#if USE_HASHLIST
+		   ret = insertUInt32HashList(new->data.avp.avp_code, new, vendor->hashlist[0], (void **)&locref);
+		   if (ret)
+		      goto error_unlock;
+
+		   ret = insertStringHashList(new->data.avp.avp_name, new, vendor->hashlist[1], (void **)&locref);
+		   if (ret) {
+		      deleteEntryUInt32HashList(new->data.avp.avp_code, vendor->hashlist[0]);
+		      goto error_unlock;
+		   }
+#endif
 			/* An avp object is linked in lists 1 and 2 of its vendor, by code and name */
 			ret = fd_list_insert_ordered ( &vendor->list[1], &new->list[0], (int (*)(void*, void *))order_avp_by_code, (void **)&locref );
 			if (ret)
@@ -1754,8 +2026,14 @@ int fd_dict_new ( struct dictionary * dict, enum dict_object_type type, void * d
 		case DICT_RULE:
 			/* A rule object is linked in list[2] of its parent command or AVP by the name of the AVP it refers */
 			ret = fd_list_insert_ordered ( &parent->list[2], &new->list[0], (int (*)(void*, void *))order_rule_by_avpvc, (void **)&locref );
-			if (ret)
+			if (ret){
+			   /*If the new rule is optional and the existing one is mandatory ==> override the existing rule to optional */
+			   if(locref->data.rule.rule_position == RULE_REQUIRED && new->data.rule.rule_position == RULE_OPTIONAL){
+			      TRACE_DEBUG(INFO, "Overriding rule to optional for AVP: %s", locref->data.rule.rule_avp->data.avp.avp_name);
+			      locref->data.rule.rule_position = RULE_OPTIONAL;
+			   }
 				goto error_unlock;
+			}
 			break;
 			
 		default:
@@ -1766,6 +2044,9 @@ int fd_dict_new ( struct dictionary * dict, enum dict_object_type type, void * d
 	dict->dict_count[type]++;
 	
 	/* Unlock the dictionary */
+#if ENABLE_LOCK_BYPASS
+	if (!dict->dict_bypass_lock)
+#endif
 	CHECK_POSIX_DO(  ret = pthread_rwlock_unlock(&dict->dict_lock),  goto error_free  );
 	
 	/* Save the pointer to the new object */
@@ -1779,6 +2060,9 @@ error_param:
 	goto all_errors;
 
 error_unlock:
+#if ENABLE_LOCK_BYPASS
+   if (!dict->dict_bypass_lock)
+#endif
 	CHECK_POSIX_DO(  pthread_rwlock_unlock(&dict->dict_lock),  /* continue */  );
 	if (ret == EEXIST) {
 		/* We have a duplicate key in locref. Check if the pointed object is the same or not */
@@ -1969,6 +2253,9 @@ int fd_dict_delete(struct dict_object * obj)
 	dict = obj->dico;
 
 	/* Lock the dictionary for change */
+#if ENABLE_LOCK_BYPASS
+	if (!dict->dict_bypass_lock)
+#endif
 	CHECK_POSIX(  pthread_rwlock_wrlock(&dict->dict_lock)  );
 	
 	/* check the object is not sentinel for another list */
@@ -1989,11 +2276,21 @@ int fd_dict_delete(struct dict_object * obj)
 		destroy_object(obj);
 	
 	/* Unlock */
+#if ENABLE_LOCK_BYPASS
+	if (!dict->dict_bypass_lock)
+#endif
 	CHECK_POSIX(  pthread_rwlock_unlock(&dict->dict_lock)  );
 	
 	return ret;
 }
 
+void fd_dict_bypass_lock( struct dictionary *dict, int bypass )
+{
+#if ENABLE_LOCK_BYPASS
+	if (dict && dict->dict_eyec == DICT_EYECATCHER)
+		dict->dict_bypass_lock = bypass;
+#endif
+}
 
 int fd_dict_search ( struct dictionary * dict, enum dict_object_type type, int criteria, const void * what, struct dict_object **result, int retval )
 {
@@ -2005,12 +2302,18 @@ int fd_dict_search ( struct dictionary * dict, enum dict_object_type type, int c
 	CHECK_PARAMS( dict && (dict->dict_eyec == DICT_EYECATCHER) && CHECK_TYPE(type) );
 	
 	/* Lock the dictionary for reading */
+#if ENABLE_LOCK_BYPASS
+	if (!dict->dict_bypass_lock)
+#endif
 	CHECK_POSIX(  pthread_rwlock_rdlock(&dict->dict_lock)  );
 	
 	/* Now call the type-specific search function */
 	ret = dict_obj_info[type].search_fct (dict, criteria, what, result);
 	
 	/* Unlock */
+#if ENABLE_LOCK_BYPASS
+	if (!dict->dict_bypass_lock)
+#endif
 	CHECK_POSIX(  pthread_rwlock_unlock(&dict->dict_lock)  );
 	
 	/* Update the return value as needed */
@@ -2145,6 +2448,9 @@ int fd_dict_init ( struct dictionary ** dict)
 	new->dict_eyec = DICT_EYECATCHER;
 	
 	/* Initialize the lock for the dictionary */
+#if ENABLE_LOCK_BYPASS
+	new->dict_bypass_lock = 0;
+#endif
 	CHECK_POSIX(  pthread_rwlock_init(&new->dict_lock, NULL)  );
 	
 	/* Initialize the sentinel for vendors and AVP lists */
@@ -2154,6 +2460,13 @@ int fd_dict_init ( struct dictionary ** dict)
 	new->dict_vendors.datastr_len = CONSTSTRLEN(NO_VENDOR_NAME);
 	/* new->dict_vendors.list[0].o = NULL; *//* overwrite since element is also sentinel for this list. */
 	new->dict_vendors.dico = new;
+#if USE_HASHLIST
+   initUInt32HashList(&new->dict_vendors.hashlist[0]);
+   initStringHashList(&new->dict_vendors.hashlist[1]);
+   LOG_N("HASHLIST is enabled");
+#else
+   LOG_N("HASHLIST is disabled");
+#endif
 	
 	/* Initialize the sentinel for applications */
 	init_object( &new->dict_applications, DICT_APPLICATION );
@@ -2194,6 +2507,9 @@ int fd_dict_fini ( struct dictionary ** dict)
 	CHECK_PARAMS( dict && *dict && ((*dict)->dict_eyec == DICT_EYECATCHER) );
 	
 	/* Acquire the write lock to make sure no other operation is ongoing */
+#if ENABLE_LOCK_BYPASS
+	if (!(*dict)->dict_bypass_lock)
+#endif
 	CHECK_POSIX(  pthread_rwlock_wrlock(&(*dict)->dict_lock)  );
 	
 	/* Empty all the lists, free the elements */
@@ -2207,6 +2523,9 @@ int fd_dict_fini ( struct dictionary ** dict)
 	}
 	
 	/* Dictionary is empty, now destroy the lock */
+#if ENABLE_LOCK_BYPASS
+	if (!(*dict)->dict_bypass_lock)
+#endif
 	CHECK_POSIX(  pthread_rwlock_unlock(&(*dict)->dict_lock)  );
 	CHECK_POSIX(  pthread_rwlock_destroy(&(*dict)->dict_lock)  );
 	
@@ -2243,6 +2562,9 @@ int fd_dict_iterate_rules ( struct dict_object *parent, void * data, int (*cb)(v
 				: parent->data.avp.avp_name);
 	
 	/* Acquire the read lock  */
+#if ENABLE_LOCK_BYPASS
+	if (!parent->dico->dict_bypass_lock)
+#endif
 	CHECK_POSIX(  pthread_rwlock_rdlock(&parent->dico->dict_lock)  );
 	
 	/* go through the list and call the cb on each rule data */
@@ -2253,6 +2575,9 @@ int fd_dict_iterate_rules ( struct dict_object *parent, void * data, int (*cb)(v
 	}
 		
 	/* Release the lock */
+#if ENABLE_LOCK_BYPASS
+	if (!parent->dico->dict_bypass_lock)
+#endif
 	CHECK_POSIX(  pthread_rwlock_unlock(&parent->dico->dict_lock)  );
 	
 	return ret;
@@ -2268,6 +2593,9 @@ uint32_t * fd_dict_get_vendorid_list(struct dictionary * dict)
 	TRACE_ENTRY();
 	
 	/* Acquire the read lock */
+#if ENABLE_LOCK_BYPASS
+	if (!dict->dict_bypass_lock)
+#endif
 	CHECK_POSIX_DO(  pthread_rwlock_rdlock(&dict->dict_lock), return NULL  );
 	
 	/* Allocate an array to contain all the elements */
@@ -2281,6 +2609,9 @@ uint32_t * fd_dict_get_vendorid_list(struct dictionary * dict)
 	}
 out:	
 	/* Release the lock */
+#if ENABLE_LOCK_BYPASS
+   if (!dict->dict_bypass_lock)
+#endif
 	CHECK_POSIX_DO(  pthread_rwlock_unlock(&dict->dict_lock), return NULL  );
 	
 	return ret;

@@ -129,6 +129,9 @@ static void fd_internal_logger( int printlevel, const char *format, va_list ap )
 void fd_log ( int loglevel, const char * format, ... )
 {
 	va_list ap;
+
+   if (loglevel < fd_g_debug_lvl)
+     return;
 	
 	(void)pthread_mutex_lock(&fd_log_lock);
 	

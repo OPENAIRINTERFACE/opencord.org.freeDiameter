@@ -198,6 +198,7 @@ static int dict_gx_load_rules(char * conffile)
 			{ { .avp_vendor = 0, .avp_name = "Destination-Realm"}, RULE_REQUIRED, -1, -1 },
 			{ { .avp_vendor = 0, .avp_name = "CC-Request-Type"}, RULE_REQUIRED, -1, -1 },
 			{ { .avp_vendor = 0, .avp_name = "CC-Request-Number"}, RULE_REQUIRED, -1, -1 },
+			{ { .avp_vendor = 0, .avp_name = "Service-Context-Id"}, RULE_OPTIONAL, -1, -1 },
 			{ { .avp_vendor = 10415, .avp_name = "Credit-Management-Status"}, RULE_OPTIONAL, -1, -1 },
 			{ { .avp_vendor = 0, .avp_name = "Destination-Host"}, RULE_OPTIONAL, -1, -1 },
 			{ { .avp_vendor = 0, .avp_name = "Origin-State-Id"}, RULE_OPTIONAL, -1, -1 },
